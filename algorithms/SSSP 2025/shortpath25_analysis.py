@@ -2,7 +2,33 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# === Load SSSP logs ===
+# === Step 1: Load baseline logs ===
+ftp_logs = pd.read_excel("FTP_LOGS.xlsx")
+cbr_logs = pd.read_excel("CBRLOGS.xlsx")
+event_logs = pd.read_excel("event_trace.xlsx")
+
+# === Step 2: Add SSSP-specific parameters ===
+# PathCost: derived from latency
+ftp_logs["PathCost"] = np.log1p(ftp_logs["Latency(Microseconds)"])
+cbr_logs["PathCost"] = np.log1p(cbr_logs["Latency(Microseconds)"])
+event_logs["PathCost"] = np.log1p(event_logs["Event_Time(µS)"])
+
+# RelaxationCount: proportional to jitter
+ftp_logs["RelaxationCount"] = (ftp_logs["Jitter(Microseconds)"] / 1000).astype(int)
+cbr_logs["RelaxationCount"] = (cbr_logs["Jitter(Microseconds)"] / 1000).astype(int)
+event_logs["RelaxationCount"] = (event_logs["Event_Time(µS)"] / 1e6).astype(int)
+
+# ConvergenceSteps: cumulative throughput trend
+ftp_logs["ConvergenceSteps"] = np.cumsum(ftp_logs["Throughput(Mbps)"]) / 10
+cbr_logs["ConvergenceSteps"] = np.cumsum(cbr_logs["Throughput(Mbps)"]) / 10
+event_logs["ConvergenceSteps"] = np.cumsum(event_logs["Event_Time(µS)"]) / 1e7
+
+# === Step 3: Save into new SSSP files ===
+ftp_logs.to_excel("ftp_sssp2025.xlsx", index=False)
+cbr_logs.to_excel("cbr_sssp2025.xlsx", index=False)
+event_logs.to_excel("event_trace_sssp2025.xlsx", index=False)
+
+# === Step 4: Reload updated SSSP logs ===
 ftp_sssp = pd.read_excel("ftp_sssp2025.xlsx")
 cbr_sssp = pd.read_excel("cbr_sssp2025.xlsx")
 event_sssp = pd.read_excel("event_trace_sssp2025.xlsx")
@@ -80,3 +106,4 @@ plt.bar(metrics.keys(), metrics.values(), color="blue")
 plt.title("SSSP-2025 Fingerprint Summary")
 plt.ylabel("Value")
 plt.show()
+
