@@ -3,10 +3,43 @@ import matplotlib.pyplot as plt
 import numpy as np
 from math import pi
 
-# Load RBFT logs
-ftp_rbft = pd.read_excel("FTP_LOGS_RBFT.xlsx")
-cbr_rbft = pd.read_excel("CBR_LOGS_RBFT.xlsx")
-event_rbft = pd.read_excel("EVENT_TRACE_RBFT.xlsx")
+# === Step 1: Load baseline logs ===
+ftp_logs = pd.read_excel("FTP_LOGS.xlsx")
+cbr_logs = pd.read_excel("CBRLOGS.xlsx")
+event_logs = pd.read_excel("event_trace.xlsx")
+
+# === Step 2: Add RBFT-specific parameters ===
+# FaultCount: synthetic proportional to jitter
+ftp_logs["FaultCount"] = (ftp_logs["Jitter(Microseconds)"] / 1000).astype(int)
+cbr_logs["FaultCount"] = (cbr_logs["Jitter(Microseconds)"] / 1000).astype(int)
+event_logs["FaultCount"] = (event_logs["Event_Time(µS)"] / 1e6).astype(int)
+
+# RecoverySteps: cumulative latency trend
+ftp_logs["RecoverySteps"] = np.cumsum(ftp_logs["Latency(Microseconds)"]) / 1e6
+cbr_logs["RecoverySteps"] = np.cumsum(cbr_logs["Latency(Microseconds)"]) / 1e6
+event_logs["RecoverySteps"] = np.cumsum(event_logs["Event_Time(µS)"]) / 1e7
+
+# RuleTrigger: assign based on thresholds
+ftp_logs["RuleTrigger"] = np.where(ftp_logs["Throughput(Mbps)"] > ftp_logs["Throughput(Mbps)"].mean(), "RuleA", "RuleB")
+cbr_logs["RuleTrigger"] = np.where(cbr_logs["Throughput(Mbps)"] > cbr_logs["Throughput(Mbps)"].mean(), "RuleX", "RuleY")
+event_logs["RuleTrigger"] = np.where(event_logs["Event_Time(µS)"] % 2 == 0, "RuleZ", "RuleY")
+
+# ResilienceScore: normalized throughput
+ftp_logs["ResilienceScore"] = ftp_logs["Throughput(Mbps)"] / (ftp_logs["Throughput(Mbps)"].max() + 1e-9)
+cbr_logs["ResilienceScore"] = cbr_logs["Throughput(Mbps)"] / (cbr_logs["Throughput(Mbps)"].max() + 1e-9)
+event_logs["ResilienceScore"] = event_logs["Event_Time(µS)"] / (event_logs["Event_Time(µS)"].max() + 1e-9)
+
+# === Step 3: Save into new RBFT files ===
+ftp_logs.to_excel("ftp_rbft.xlsx", index=False)
+cbr_logs.to_excel("cbr_rbft.xlsx", index=False)
+event_logs.to_excel("event_trace_rbft.xlsx", index=False)
+
+# === Step 4: Reload updated RBFT logs ===
+ftp_rbft = pd.read_excel("ftp_rbft.xlsx")
+cbr_rbft = pd.read_excel("cbr_rbft.xlsx")
+event_rbft = pd.read_excel("event_trace_rbft.xlsx")
+
+# === Step 5: Plot graphs ===
 
 # 1. Latency vs FaultCount (FTP)
 plt.figure()
@@ -80,3 +113,4 @@ ax.fill(angles, values, alpha=0.25)
 ax.set_thetagrids(np.degrees(angles[:-1]), labels)
 plt.title("RBFT Fingerprint Radar Chart")
 plt.show()
+
