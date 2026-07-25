@@ -2,79 +2,85 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-# === Load GA logs ===
-ftp_ga = pd.read_excel("ftp_ga.xlsx")
-cbr_ga = pd.read_excel("cbr_ga.xlsx")
-event_ga = pd.read_excel("event_trace_ga.xlsx")
+# === Step 1: Load baseline logs ===
+ftp_logs = pd.read_excel("FTP_LOGS.xlsx")
+cbr_logs = pd.read_excel("CBRLOGS.xlsx")
+event_logs = pd.read_excel("event_trace.xlsx")
 
-# Helper: Jain's Fairness Index
-def fairness_index(values):
-    values = np.array(values)
-    return (np.sum(values)**2) / (len(values) * np.sum(values**2) + 1e-9)
+# === Step 2: Add PSO-specific parameters ===
+# Swarm Diversity: normalized jitter
+ftp_logs["SwarmDiversity"] = ftp_logs["Jitter(Microseconds)"] / (ftp_logs["Jitter(Microseconds)"].max() + 1e-9)
+cbr_logs["SwarmDiversity"] = cbr_logs["Jitter(Microseconds)"] / (cbr_logs["Jitter(Microseconds)"].max() + 1e-9)
+event_logs["SwarmDiversity"] = np.sin(event_logs["Event_Time(µS)"] / 1e6)  # synthetic oscillation
 
-# === Graph 1: Latency Convergence (FTP vs CBR) ===
+# Fitness Variance: rolling variance of throughput
+ftp_logs["FitnessVariance"] = ftp_logs["Throughput(Mbps)"].rolling(10).var()
+cbr_logs["FitnessVariance"] = cbr_logs["Throughput(Mbps)"].rolling(10).var()
+event_logs["FitnessVariance"] = event_logs["Event_Time(µS)"].rolling(10).var()
+
+# Velocity Convergence: normalized latency differences
+ftp_logs["VelocityConvergence"] = ftp_logs["Latency(Microseconds)"].diff().abs() / (ftp_logs["Latency(Microseconds)"].max() + 1e-9)
+cbr_logs["VelocityConvergence"] = cbr_logs["Latency(Microseconds)"].diff().abs() / (cbr_logs["Latency(Microseconds)"].max() + 1e-9)
+event_logs["VelocityConvergence"] = event_logs["Event_Time(µS)"].diff().abs() / (event_logs["Event_Time(µS)"].max() + 1e-9)
+
+# Entropy Collapse: Shannon entropy of throughput distribution
+def entropy(values):
+    p = values / (np.sum(values) + 1e-9)
+    return -np.sum(p * np.log1p(p))
+
+ftp_logs["EntropyCollapse"] = entropy(ftp_logs["Throughput(Mbps)"])
+cbr_logs["EntropyCollapse"] = entropy(cbr_logs["Throughput(Mbps)"])
+event_logs["EntropyCollapse"] = entropy(event_logs["Event_Time(µS)"])
+
+# === Step 3: Save into new PSO files ===
+ftp_logs.to_excel("ftp_pso.xlsx", index=False)
+cbr_logs.to_excel("cbr_pso.xlsx", index=False)
+event_logs.to_excel("event_trace_pso.xlsx", index=False)
+
+# === Step 4: Reload updated PSO logs ===
+ftp_pso = pd.read_excel("ftp_pso.xlsx")
+cbr_pso = pd.read_excel("cbr_pso.xlsx")
+event_pso = pd.read_excel("event_trace_pso.xlsx")
+
+# === Step 5: Plot graphs ===
+
+# Graph 1: Swarm Diversity Curve
 plt.figure()
-plt.plot(ftp_ga.index, ftp_ga["Latency(Microseconds)"], label="FTP Latency")
-plt.plot(cbr_ga.index, cbr_ga["Latency(Microseconds)"], label="CBR Latency")
-plt.plot(cbr_ga.index, cbr_ga["FitnessVariance"], label="Fitness Variance", linestyle="--")
-plt.title("GA Latency Convergence")
-plt.xlabel("Packet Index"); plt.ylabel("Latency (µs)")
+plt.plot(ftp_pso.index, ftp_pso["SwarmDiversity"], label="FTP Swarm Diversity")
+plt.plot(cbr_pso.index, cbr_pso["SwarmDiversity"], label="CBR Swarm Diversity")
+plt.title("PSO Swarm Diversity Curve")
+plt.xlabel("Packet Index"); plt.ylabel("Diversity")
 plt.legend(); plt.show()
 
-# === Graph 2: Throughput Stability ===
+# Graph 2: Fitness Variance vs Event Time
 plt.figure()
-plt.plot(ftp_ga.index, ftp_ga["Throughput(Mbps)"], label="FTP Throughput")
-plt.plot(cbr_ga.index, cbr_ga["Throughput(Mbps)"], label="CBR Throughput")
-plt.plot(cbr_ga.index, cbr_ga["CrossoverEfficiency"], label="Crossover Efficiency", linestyle="--")
-plt.title("GA Throughput Stability")
-plt.xlabel("Packet Index"); plt.ylabel("Throughput (Mbps)")
+plt.plot(ftp_pso.index, ftp_pso["FitnessVariance"], label="FTP Fitness Variance")
+plt.plot(cbr_pso.index, cbr_pso["FitnessVariance"], label="CBR Fitness Variance")
+plt.title("PSO Fitness Variance Dynamics")
+plt.xlabel("Packet Index"); plt.ylabel("Variance")
 plt.legend(); plt.show()
 
-# === Graph 3: Fairness Index Trend ===
-ftp_fairness = [fairness_index(ftp_ga["Throughput(Mbps)"][:i+1]) for i in range(len(ftp_ga))]
-cbr_fairness = [fairness_index(cbr_ga["Throughput(Mbps)"][:i+1]) for i in range(len(cbr_ga))]
-
+# Graph 3: Velocity Convergence
 plt.figure()
-plt.plot(ftp_ga.index, ftp_fairness, label="FTP Fairness")
-plt.plot(cbr_ga.index, cbr_fairness, label="CBR Fairness")
-plt.plot(cbr_ga.index, cbr_ga["PopulationDiversity"], label="Population Diversity", linestyle="--")
-plt.title("GA Fairness Trend")
-plt.xlabel("Packet Index"); plt.ylabel("Fairness Index")
+plt.plot(ftp_pso.index, ftp_pso["VelocityConvergence"], label="FTP Velocity Convergence")
+plt.plot(cbr_pso.index, cbr_pso["VelocityConvergence"], label="CBR Velocity Convergence")
+plt.title("PSO Velocity Convergence Curve")
+plt.xlabel("Packet Index"); plt.ylabel("Convergence")
 plt.legend(); plt.show()
 
-# === Graph 4: Jitter Distribution (CBR) ===
+# Graph 4: Entropy Collapse
 plt.figure()
-plt.hist(cbr_ga["Jitter(Microseconds)"], bins=30, color="skyblue", edgecolor="black")
-plt.title("GA Jitter Distribution (CBR)")
-plt.xlabel("Jitter (µs)"); plt.ylabel("Frequency")
-plt.show()
-
-# === Graph 5: Event Trace Recovery Dynamics ===
-plt.figure()
-plt.plot(event_ga["Event_Time(µS)"], event_ga["FitnessVariance"], label="Fitness Variance")
-plt.title("GA Event Trace Recovery Dynamics")
-plt.xlabel("Event Time (µs)"); plt.ylabel("Fitness Variance")
-plt.legend(); plt.show()
-
-# === Graph 6: Entropy Collapse Curve ===
-latencies = ftp_ga["Latency(Microseconds)"]
-p = latencies / latencies.sum()
-entropy = -np.sum(p * np.log1p(p))
-plt.figure()
-plt.plot(ftp_ga.index, np.linspace(entropy, 0, len(ftp_ga)), label="Entropy Collapse")
-plt.title("GA Entropy Collapse")
+plt.plot(ftp_pso.index, ftp_pso["EntropyCollapse"], label="FTP Entropy Collapse")
+plt.plot(cbr_pso.index, cbr_pso["EntropyCollapse"], label="CBR Entropy Collapse")
+plt.title("PSO Entropy Collapse Curve")
 plt.xlabel("Packet Index"); plt.ylabel("Entropy")
 plt.legend(); plt.show()
 
-# === Graph 7: Comparative Fingerprint Bar Chart ===
-metrics = {
-    "Fairness": np.mean(cbr_fairness),
-    "Oscillations": np.sum(np.diff(cbr_ga["Latency(Microseconds)"]) < 0),
-    "RecoveryTime": np.max(cbr_ga["Latency(Microseconds)"]) - np.mean(cbr_ga["Latency(Microseconds)"]),
-    "Entropy": entropy
-}
+# Graph 5: Event Trace PSO Metrics
 plt.figure()
-plt.bar(metrics.keys(), metrics.values(), color="orange")
-plt.title("GA Fingerprint Summary")
-plt.ylabel("Value")
-plt.show()
+plt.plot(event_pso["Event_Time(µS)"], event_pso["SwarmDiversity"], label="Swarm Diversity")
+plt.plot(event_pso["Event_Time(µS)"], event_pso["FitnessVariance"], label="Fitness Variance")
+plt.plot(event_pso["Event_Time(µS)"], event_pso["VelocityConvergence"], label="Velocity Convergence")
+plt.title("PSO Event Trace Metrics")
+plt.xlabel("Event Time (µs)"); plt.ylabel("PSO Metrics")
+plt.legend(); plt.show()
